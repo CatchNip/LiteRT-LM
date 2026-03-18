@@ -403,6 +403,20 @@ absl::StatusOr<ExecutorVisionData> VisionLiteRtCompiledModelExecutor::Encode(
                               ReferTensorBufferAsSpan<float>(value));
       LITERT_RETURN_IF_ERROR(
           input_buffers[input_index].Write<float>(input_data));
+
+      // Force clearing padding beyond the written data
+      LITERT_ASSIGN_OR_RETURN(auto lock_and_addr,
+                              litert::TensorBufferScopedLock::Create<float>(
+                                  input_buffers[input_index],
+                                  litert::TensorBuffer::LockMode::kWrite));
+      LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                              input_buffers[input_index].PackedSize());
+      size_t written_size = input_data.size() * sizeof(float);
+      if (packed_size > written_size) {
+        std::memset(reinterpret_cast<uint8_t*>(lock_and_addr.second) +
+                        written_size,
+                    0, packed_size - written_size);
+      }
     } else if (tensor_type.ElementType() == ElementType::Int32) {
       // Initialize the position buffer to -1 since the input image tensor
       // might have different size as the encoder input tensor.
