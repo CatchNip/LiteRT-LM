@@ -119,11 +119,6 @@ class Engine(val engineConfig: EngineConfig) : AutoCloseable {
       val toolManager = ToolManager(conversationConfig.tools)
       val messagesJson: JsonArray =
         JsonArray().apply {
-          conversationConfig.systemMessage?.let {
-            // Convert the message's role to Role.SYSTEM for backward compatibility.
-            this.add(Message(Role.SYSTEM, it.contents).toJson())
-          }
-
           conversationConfig.systemInstruction?.let { this.add(Message(Role.SYSTEM, it).toJson()) }
 
           for (message in conversationConfig.initialMessages) {
