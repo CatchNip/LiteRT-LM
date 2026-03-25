@@ -53,11 +53,12 @@ class LiteRTLMCLI:
           " the converted model."
       )
       print(
-          "  2. Rename the existing model with 'litert-lm rename"
+          "  3. Rename the existing model with 'litert-lm rename"
           f" {effective_model_id} <new_model_id>' and convert the model again."
       )
       return
 
+    venv_manager.recreate_venv_if_self_managed()
     venv_manager.ensure_binary(venv_manager.LITERT_TORCH_BIN)
 
     output_dir = model.get_model_dir(effective_model_id)
@@ -232,7 +233,9 @@ class LiteRTLMCLI:
 
     Args:
       model_reference: A relative or absolute path to a .litertlm model file, or
-        a model ID from `litert-lm list`.
+        a model ID from `litert-lm list`. If the model is not found locally and
+        the reference looks like a HuggingFace repository ID (e.g.,
+        "google/gemma-3-1b-it"), an automatic conversion will be attempted.
       prompt: A single prompt to run once and exit.
       android: Whether to run the model on an Android device via ADB.
       backend: The backend to use (cpu or gpu).
@@ -244,6 +247,22 @@ class LiteRTLMCLI:
       litert_lm.set_min_log_severity(litert_lm.LogSeverity.VERBOSE)
 
     model_obj = model.Model.from_model_reference(model_reference)
+    if not model_obj.exists():
+      # Only auto-convert if it looks like a HuggingFace repo ID (account/repo)
+      # and is not a local path.
+      parts = model_reference.split("/")
+      if len(parts) == 2 and all(parts) and not os.path.exists(model_reference):
+        print(
+            f"Model '{model_reference}' not found. Attempting to convert from"
+            f" https://huggingface.co/{model_reference} ..."
+        )
+        self.convert(model_reference)
+        model_obj = model.Model.from_model_reference(model_reference)
+
+      if not model_obj.exists():
+        print(f"Failed to find or convert model '{model_reference}'.")
+        return
+
     model_obj.run_interactive(
         prompt=prompt, is_android=android, backend=backend, preset=preset
     )

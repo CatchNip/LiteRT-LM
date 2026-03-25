@@ -18,12 +18,16 @@ import os
 import subprocess
 import sys
 
-# The directory for the virtual environment. It prioritizes the active
-# virtual environment if available (VIRTUAL_ENV or sys.prefix).
-_DEFAULT_VENV_DIR = os.path.expanduser("~/.litert-lm/.venv")
+# The dir for the virtual environment managed by this CLI. This dir won't be
+# used if there is an active virtual environment.
+_SELF_MANAGED_VENV_DIR = os.path.expanduser("~/.litert-lm/.venv")
+
+# The directory for the virtual environment. It prioritizes the active virtual
+# environment if available (VIRTUAL_ENV or sys.prefix) over the "self-managed"
+# virtual environment.
 VENV_DIR = os.environ.get(
     "VIRTUAL_ENV",
-    sys.prefix if sys.prefix != sys.base_prefix else _DEFAULT_VENV_DIR,
+    sys.prefix if sys.prefix != sys.base_prefix else _SELF_MANAGED_VENV_DIR,
 )
 
 PYTHON_BIN = os.path.join(VENV_DIR, "bin", "python")
@@ -37,7 +41,7 @@ def ensure_venv():
   if os.path.exists(VENV_DIR):
     return
 
-  if VENV_DIR != _DEFAULT_VENV_DIR:
+  if VENV_DIR != _SELF_MANAGED_VENV_DIR:
     # Note this should never happen.
     raise RuntimeError(f"Virtual environment directory not found: {VENV_DIR}")
 
@@ -47,12 +51,31 @@ def ensure_venv():
   subprocess.run([python_exe, "-m", "venv", VENV_DIR], check=True)
 
 
+def recreate_venv_if_self_managed():
+  """Deletes and re-creates the virtual environment if it is self-managed.
+
+  This ensures we are using the latest litert-torch-nightly. Since uv has local
+  cache, if the version has been downloaded before, it will be very fast.
+  """
+  if VENV_DIR != _SELF_MANAGED_VENV_DIR:
+    # Only recreate if it's the default venv managed by the CLI.
+    return
+
+  if os.path.exists(VENV_DIR):
+    import shutil
+
+    print(f"Deleting virtual environment in {VENV_DIR}...")
+    shutil.rmtree(VENV_DIR)
+
+  ensure_venv()
+
+
 def ensure_binary(binary_path):
   """Ensures the binary exists, or installs it if using the default venv."""
   if os.path.exists(binary_path):
     return
 
-  if VENV_DIR != _DEFAULT_VENV_DIR:
+  if VENV_DIR != _SELF_MANAGED_VENV_DIR:
     # This might happens if user manually uninstall the package to break the
     # dependency.
     raise RuntimeError(
@@ -61,7 +84,7 @@ def ensure_binary(binary_path):
         " corresponding package manually."
     )
   else:
-    # If the venv is _DEFAULT_VENV_DIR (~/.litert-lm/.venv) managed by the CLI,
+    # If the venv is _SELF_MANAGED_VENV_DIR (~/.litert-lm/.venv) managed by the CLI,
     # then attempt to install the required dependencies.
     pass
 
