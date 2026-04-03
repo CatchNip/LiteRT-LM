@@ -34,6 +34,7 @@
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_element_type.h"  // from @litert
 #include "litert/cc/litert_macros.h"  // from @litert
 #include "litert/cc/litert_tensor_buffer.h"  // from @litert
 #include "runtime/components/constrained_decoding/constrained_decoder.h"
@@ -50,9 +51,20 @@
 #include "runtime/proto/sampler_params.pb.h"
 #include "runtime/util/convert_tensor_buffer.h"
 #include "runtime/util/status_macros.h"  //NOLINT
+#include "tflite/types/half.h"  // from @litert
 
 namespace litert::lm::Tasks {
 namespace {
+
+// Converts a span of fp16 values to a vector of fp32 values.
+// TODO: b/499304966 - move this to a common util file and add tests.
+void ConvertFp16ToFp32(absl::Span<const tflite::half> fp16_values,
+                       std::vector<float>& out) {
+  out.resize(fp16_values.size());
+  for (int i = 0; i < fp16_values.size(); ++i) {
+    out[i] = static_cast<float>(fp16_values[i]);
+  }
+}
 
 // TODO(b/423364170): all LLM Executors should respect the max number of tokens
 // returned by the model. We should remove this default value once all Executors
@@ -219,6 +231,7 @@ class DecodeOneStep {
   // decoded_ids: The decoded id tensor buffer in which the sampled ids are
   //              written so that the model uses reference text future step.
   // Returns: A vector of log likelihoods for the sampled ids.
+  // TODO: b/499304966 - Add tests for the float16 path.
   absl::StatusOr<std::vector<float>> RunScoreStep(
       const float temperature, const std::vector<int>& step_input_ids,
       litert::TensorBuffer decoded_ids) {
@@ -237,19 +250,45 @@ class DecodeOneStep {
       RETURN_IF_ERROR(benchmark_info_->TimeMarkDelta("executor_decode"));
     }
     decoded_ids.Write<int>(step_input_ids);
-    auto logits_data_or = ReferTensorBufferAsSpan<float>(output_logits);
+    LITERT_ASSIGN_OR_RETURN(auto logits_tensor_type,
+                            output_logits.TensorType());
+    auto logits_dims = logits_tensor_type.Layout().Dimensions();
+    // Logits dims are {batch, seq, vocab}. For scoring, we expect batch size to
+    // be the same as the input batch size, sequence length to be 1, and vocab
+    // size to be the same as the tokenizer size.
+    RET_CHECK_EQ(logits_dims.size(), 3)
+        << "Output logits must have shape [batch, seq, vocab].";
+    const int batch_size = step_input_ids.size();
+    RET_CHECK_EQ(logits_dims[0], batch_size)
+        << "Logits batch size does not match the input batch size.";
+    RET_CHECK_EQ(logits_dims[1], 1) << "Scoring expects a single decode step.";
+
     absl::Span<float> logits_data;
     std::vector<float> logits_data_buffer;
-    // Download the data if it is not in host memory.
-    if (!logits_data_or) {
-      LITERT_ASSIGN_OR_RETURN(auto logits_size, output_logits.PackedSize());
-      logits_data_buffer.resize(logits_size / sizeof(float));
-      LITERT_RETURN_IF_ERROR(
-          output_logits.Read(absl::MakeSpan(logits_data_buffer)));
+    if (logits_tensor_type.ElementType() == litert::ElementType::Float32) {
+      auto logits_data_or = ReferTensorBufferAsSpan<float>(output_logits);
+      if (!logits_data_or) {
+        LITERT_ASSIGN_OR_RETURN(logits_data_buffer,
+                                CopyFromTensorBuffer<float>(output_logits));
+        logits_data = absl::MakeSpan(logits_data_buffer);
+      } else {
+        logits_data = *logits_data_or;
+      }
+    } else if (logits_tensor_type.ElementType() ==
+               litert::ElementType::Float16) {
+      LITERT_ASSIGN_OR_RETURN(
+          auto logits_data_f16,
+          CopyFromTensorBuffer<tflite::half>(output_logits));
+      ConvertFp16ToFp32(absl::MakeConstSpan(logits_data_f16),
+                        logits_data_buffer);
       logits_data = absl::MakeSpan(logits_data_buffer);
     } else {
-      logits_data = *logits_data_or;
+      return absl::InvalidArgumentError(
+          absl::StrCat("Unsupported logits element type for scoring: ",
+                       logits_tensor_type.ElementType()));
     }
+    RET_CHECK_EQ(logits_data.size(), batch_size * logits_dims[2])
+        << "Logits buffer size does not match logits tensor shape.";
     return ComputeLogLikelihood(logits_data, step_input_ids, temperature);
   }
 
