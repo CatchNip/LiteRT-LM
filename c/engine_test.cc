@@ -7,18 +7,25 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/log/check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/synchronization/notification.h"  // from @com_google_absl
 #include "nlohmann/json.hpp"  // from @nlohmann_json
 #include "runtime/conversation/conversation.h"
 #include "runtime/conversation/io_types.h"
+#include "runtime/engine/engine_factory.h"
 #include "runtime/engine/engine_settings.h"
 #include "runtime/executor/executor_settings_base.h"
 #include "runtime/executor/llm_executor_settings.h"
 
 struct LiteRtLmEngineSettings {
   std::unique_ptr<litert::lm::EngineSettings> settings;
+
+  // CatchNip fork extension: must mirror the definition in `c/engine.cc` so
+  // both translation units agree on struct layout (ODR).
+  litert::lm::EngineFactory::EngineType engine_type =
+      litert::lm::EngineFactory::EngineType::kLiteRTCompiledModel;
 };
 
 struct LiteRtLmSessionConfig {
@@ -1052,4 +1059,92 @@ TEST(EngineCTest, Benchmark) {
               0.0);
   }
 }
+
+// -- CatchNip fork extension smoke tests -----------------------------------
+//
+// These tests do not require a real model — they construct default CPU
+// settings via `EngineSettings::CreateDefault`, invoke each setter, and
+// verify that the underlying C++ state was updated. This is sufficient to
+// guard against regressions in the C-to-C++ plumbing.
+
+namespace {
+
+std::unique_ptr<LiteRtLmEngineSettings> MakeCpuOwnerForForkTest() {
+  auto engine_settings = litert::lm::EngineSettings::CreateDefault(
+      litert::lm::ModelAssets(), litert::lm::Backend::CPU);
+  CHECK_OK(engine_settings.status());
+  auto owner = std::make_unique<LiteRtLmEngineSettings>();
+  owner->settings =
+      std::make_unique<litert::lm::EngineSettings>(*std::move(engine_settings));
+  return owner;
+}
+
+}  // namespace
+
+TEST(CatchNipForkExtensionsTest, DispatchLibDirSetterStoresPath) {
+  auto owner = MakeCpuOwnerForForkTest();
+
+  litert_lm_engine_settings_set_dispatch_lib_dir(owner.get(), "/tmp/delegates");
+  EXPECT_EQ(
+      owner->settings->GetMainExecutorSettings().GetLitertDispatchLibDir(),
+      "/tmp/delegates");
+}
+
+TEST(CatchNipForkExtensionsTest, CpuThreadsSetterUpdatesCpuConfig) {
+  auto owner = MakeCpuOwnerForForkTest();
+
+  litert_lm_engine_settings_set_cpu_threads(owner.get(), 6);
+  auto cpu_config =
+      owner->settings->GetMutableMainExecutorSettings()
+          .MutableBackendConfig<litert::lm::CpuConfig>();
+  ASSERT_TRUE(cpu_config.ok());
+  EXPECT_EQ(cpu_config->number_of_threads, 6u);
+}
+
+TEST(CatchNipForkExtensionsTest, SpeculativeDecodingSetterFlipsFlag) {
+  auto owner = MakeCpuOwnerForForkTest();
+
+  litert_lm_engine_settings_set_speculative_decoding(owner.get(), true);
+  auto advanced =
+      owner->settings->GetMainExecutorSettings().GetAdvancedSettings();
+  ASSERT_TRUE(advanced.has_value());
+  EXPECT_TRUE(advanced->enable_speculative_decoding);
+
+  litert_lm_engine_settings_set_speculative_decoding(owner.get(), false);
+  advanced = owner->settings->GetMainExecutorSettings().GetAdvancedSettings();
+  ASSERT_TRUE(advanced.has_value());
+  EXPECT_FALSE(advanced->enable_speculative_decoding);
+}
+
+TEST(CatchNipForkExtensionsTest, EngineTypeSetterRespectsKnownValues) {
+  auto owner_ptr = MakeCpuOwnerForForkTest();
+  auto& owner = *owner_ptr;
+
+  // Default is upstream.
+  EXPECT_EQ(owner.engine_type,
+            litert::lm::EngineFactory::EngineType::kLiteRTCompiledModel);
+
+  litert_lm_engine_settings_set_engine_type(&owner, 0);
+  EXPECT_EQ(
+      owner.engine_type,
+      litert::lm::EngineFactory::EngineType::kAdvancedLiteRTCompiledModel);
+
+  litert_lm_engine_settings_set_engine_type(&owner, 1);
+  EXPECT_EQ(owner.engine_type,
+            litert::lm::EngineFactory::EngineType::kLiteRTCompiledModel);
+
+  // Unknown values are ignored (previous value retained).
+  litert_lm_engine_settings_set_engine_type(&owner, 42);
+  EXPECT_EQ(owner.engine_type,
+            litert::lm::EngineFactory::EngineType::kLiteRTCompiledModel);
+}
+
+TEST(CatchNipForkExtensionsTest, NullSettingsIsSafeForAllSetters) {
+  litert_lm_engine_settings_set_dispatch_lib_dir(nullptr, "/tmp");
+  litert_lm_engine_settings_set_cpu_threads(nullptr, 4);
+  litert_lm_engine_settings_set_speculative_decoding(nullptr, true);
+  litert_lm_engine_settings_set_engine_type(nullptr, 0);
+  SUCCEED();  // No crash = test passes.
+}
+
 }  // namespace

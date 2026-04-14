@@ -113,6 +113,12 @@ using ::litert::lm::proto::SamplerParameters;
 
 struct LiteRtLmEngineSettings {
   std::unique_ptr<EngineSettings> settings;
+
+  // CatchNip fork extension: engine implementation variant selected via
+  // `litert_lm_engine_settings_set_engine_type`. Default matches upstream
+  // `EngineFactory::CreateDefault` behavior.
+  EngineFactory::EngineType engine_type =
+      EngineFactory::EngineType::kLiteRTCompiledModel;
 };
 
 struct LiteRtLmEngine {
@@ -409,6 +415,67 @@ void litert_lm_engine_settings_set_prefill_chunk_size(
   }
 }
 
+// ---------------------------------------------------------------------------
+// CatchNip fork extensions.
+// ---------------------------------------------------------------------------
+
+void litert_lm_engine_settings_set_dispatch_lib_dir(
+    LiteRtLmEngineSettings* settings, const char* path) {
+  if (settings && settings->settings && path != nullptr) {
+    settings->settings->GetMutableMainExecutorSettings()
+        .SetLitertDispatchLibDir(path);
+  }
+}
+
+void litert_lm_engine_settings_set_cpu_threads(
+    LiteRtLmEngineSettings* settings, int num_threads) {
+  if (!settings || !settings->settings || num_threads <= 0) {
+    return;
+  }
+  auto& main_settings = settings->settings->GetMutableMainExecutorSettings();
+  auto config = main_settings.MutableBackendConfig<litert::lm::CpuConfig>();
+  if (!config.ok()) {
+    ABSL_LOG(WARNING) << "Failed to get CpuConfig to set cpu threads: "
+                      << config.status();
+    return;
+  }
+  config->number_of_threads = static_cast<uint32_t>(num_threads);
+  main_settings.SetBackendConfig(*config);
+}
+
+void litert_lm_engine_settings_set_speculative_decoding(
+    LiteRtLmEngineSettings* settings, bool enable) {
+  if (!settings || !settings->settings) {
+    return;
+  }
+  auto& main_settings = settings->settings->GetMutableMainExecutorSettings();
+  litert::lm::AdvancedSettings advanced =
+      main_settings.GetAdvancedSettings().value_or(
+          litert::lm::AdvancedSettings{});
+  advanced.enable_speculative_decoding = enable;
+  main_settings.SetAdvancedSettings(advanced);
+}
+
+void litert_lm_engine_settings_set_engine_type(
+    LiteRtLmEngineSettings* settings, int engine_type) {
+  if (!settings) {
+    return;
+  }
+  switch (engine_type) {
+    case 0:
+      settings->engine_type =
+          EngineFactory::EngineType::kAdvancedLiteRTCompiledModel;
+      break;
+    case 1:
+      settings->engine_type = EngineFactory::EngineType::kLiteRTCompiledModel;
+      break;
+    default:
+      ABSL_LOG(WARNING) << "Unknown engine_type " << engine_type
+                        << "; retaining previous value.";
+      break;
+  }
+}
+
 LiteRtLmEngine* litert_lm_engine_create(
     const LiteRtLmEngineSettings* settings) {
   if (!settings || !settings->settings) {
@@ -416,7 +483,10 @@ LiteRtLmEngine* litert_lm_engine_create(
   }
 
   absl::StatusOr<std::unique_ptr<Engine>> engine;
-    engine = EngineFactory::CreateDefault(*settings->settings);
+  // CatchNip fork extension: honor `engine_type` when it has been set via
+  // `litert_lm_engine_settings_set_engine_type`. When unset, fall back to the
+  // upstream default (`kLiteRTCompiledModel`).
+  engine = EngineFactory::Create(settings->engine_type, *settings->settings);
 
   if (!engine.ok()) {
     ABSL_LOG(ERROR) << "Failed to create engine: " << engine.status();

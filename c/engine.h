@@ -241,6 +241,56 @@ LITERT_LM_C_API_EXPORT
 void litert_lm_engine_settings_set_num_decode_tokens(
     LiteRtLmEngineSettings* settings, int num_decode_tokens);
 
+// ---------------------------------------------------------------------------
+// CatchNip fork extensions (not present upstream as of 2026-04-14).
+//
+// These four setters expose tuning knobs that exist in the internal C++ /
+// Kotlin JNI APIs but are not surfaced by the upstream C header. They are
+// opt-in via the downstream Rust `litert-lm-fork` feature and do not affect
+// the upstream-only build. See CatchNip/LiteRT-LM PR for rationale.
+// ---------------------------------------------------------------------------
+
+// Sets the directory where LiteRT should search for dispatch (NPU/GPU
+// delegate) libraries.
+//
+// @param settings The engine settings.
+// @param path     Absolute or relative path to a directory containing
+//                 `libLiteRtDispatch*.so` libraries. Null-terminated UTF-8.
+LITERT_LM_C_API_EXPORT
+void litert_lm_engine_settings_set_dispatch_lib_dir(
+    LiteRtLmEngineSettings* settings, const char* path);
+
+// Sets the CPU thread count used by the engine when the CPU backend is
+// selected. No effect on GPU/NPU backends.
+//
+// @param settings    The engine settings.
+// @param num_threads The desired CPU thread count (must be > 0).
+LITERT_LM_C_API_EXPORT
+void litert_lm_engine_settings_set_cpu_threads(
+    LiteRtLmEngineSettings* settings, int num_threads);
+
+// Enables or disables speculative decoding. When enabled, the executor uses
+// an auxiliary model to predict multiple tokens per step when the backend
+// supports it.
+//
+// @param settings The engine settings.
+// @param enable   True to enable speculative decoding.
+LITERT_LM_C_API_EXPORT
+void litert_lm_engine_settings_set_speculative_decoding(
+    LiteRtLmEngineSettings* settings, bool enable);
+
+// Selects the engine implementation variant used by `litert_lm_engine_create`.
+//
+// Values map to `EngineFactory::EngineType`:
+//   0 = kAdvancedLiteRTCompiledModel
+//   1 = kLiteRTCompiledModel (default)
+//
+// @param settings    The engine settings.
+// @param engine_type The engine type enum value.
+LITERT_LM_C_API_EXPORT
+void litert_lm_engine_settings_set_engine_type(
+    LiteRtLmEngineSettings* settings, int engine_type);
+
 // Creates a LiteRT LM Engine from the given settings. The caller is responsible
 // for destroying the engine using `litert_lm_engine_delete`.
 //
