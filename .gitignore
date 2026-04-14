@@ -1,2 +1,4 @@
 /MODULE.bazel.lock
 /bazel-*
+# CatchNip fork-only: Claude Code session checkpoint artifact.
+/.entire/
