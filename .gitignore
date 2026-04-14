@@ -2,3 +2,7 @@
 /bazel-*
 # CatchNip fork-only: Claude Code session checkpoint artifact.
 /.entire/
+# CatchNip fork-only: CMake build directory.
+# On macOS APFS/HFS+ (case-insensitive) the default `build/` collides with
+# the top-level Bazel `BUILD` file, so downstream consumers use `_cmake_build*`.
+/_cmake_build*/
