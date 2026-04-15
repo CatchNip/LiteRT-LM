@@ -111,3 +111,56 @@ cc_test(
         "//runtime/executor:llm_executor_settings",
     ],
 )
+
+# ---------------------------------------------------------------------------
+# CatchNip fork extensions: shared library targets for downstream consumers.
+#
+# `:engine` above is a `cc_library` whose default `.so` output is a thin stub
+# (no transitive symbol export). Downstream consumers (e.g., a Rust crate
+# linking via `cargo:rustc-link-lib=LiteRtLm`) need a self-contained shared
+# library with all `litert_lm_*` C API symbols exported and all C++ deps
+# (abseil, tflite, protobuf, flatbuffers, nlohmann_json, …) statically
+# linked in.
+#
+# Two `cc_binary(linkshared = True, linkstatic = True)` targets — one per
+# OS family — produce the right artifact name + extension for each platform:
+#
+#   Linux / Android → `libLiteRtLm.so`     (ELF, --export-dynamic)
+#   macOS / iOS     → `libLiteRtLm.dylib`  (Mach-O, @rpath install_name)
+#
+# Naming matches the downstream Rust crate's `build.rs` expectation, so
+# `cargo:rustc-link-lib=LiteRtLm` resolves without renames.
+# ---------------------------------------------------------------------------
+
+cc_binary(
+    name = "libLiteRtLm.so",
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # `--export-dynamic` ensures all `litert_lm_*` symbols stay visible to
+    # `dlopen`/`dlsym` consumers; without it, only directly-referenced
+    # symbols would be exported on Linux/Android (ELF default).
+    linkopts = ["-Wl,--export-dynamic"],
+    deps = [":engine"],
+)
+
+cc_binary(
+    name = "libLiteRtLm.dylib",
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:osx": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # `@rpath` install name lets consumers position the library anywhere
+    # (App bundle Frameworks/, package_id-keyed cache dir, …) and resolve
+    # via per-binary rpath entries. Mach-O dylibs export by default — no
+    # equivalent of `--export-dynamic` required.
+    linkopts = ["-Wl,-install_name,@rpath/libLiteRtLm.dylib"],
+    deps = [":engine"],
+)

@@ -32,7 +32,10 @@ extern "C" {
 #if defined(_WIN32)
 #define LITERT_LM_C_API_EXPORT __declspec(dllexport)
 #else
-#define LITERT_LM_C_API_EXPORT
+// CatchNip fork: explicit `default` visibility so the C API symbols stay
+// in the dynamic symbol table even when the consumer compiles with
+// `-fvisibility=hidden` (Bazel's Android/iOS cross-compile default).
+#define LITERT_LM_C_API_EXPORT __attribute__((visibility("default")))
 #endif
 
 // Opaque pointer for the LiteRT LM Engine.
