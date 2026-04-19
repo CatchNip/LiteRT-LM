@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC
+# Copyright 2026 The ODML Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Version number for LiteRT-LM"""
-
-# The next version of LiteRT-LM (e.g. the version that is currently in development).
-# The minor version code usually should be bumped after every release.
-VERSION = "0.11.0"
+"""LiteRT LM model runner for LM Eval Harness."""

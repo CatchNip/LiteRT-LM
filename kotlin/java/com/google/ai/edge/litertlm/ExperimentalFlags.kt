@@ -72,6 +72,16 @@ object ExperimentalFlags {
    * affect any existing [Conversation] instances.
    */
   var convertCamelToSnakeCaseInToolDescription: Boolean = true
+
+  /**
+   * Whether to filter channel content from the KV cache.
+   *
+   * If true, channel content (e.g. reasoning) will be filtered from the KV cache.
+   *
+   * Note: This flag is read only when a new [Conversation] is created. Changing this value will not
+   * affect any existing [Conversation] instances.
+   */
+  var filterChannelContentFromKvCache: Boolean = false
 }
 
 // Mark this annotation itself as requiring opt-in

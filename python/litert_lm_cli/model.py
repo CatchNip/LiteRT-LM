@@ -152,6 +152,7 @@ class Model:
       enable_speculative_decoding: bool | None = None,
       no_template: bool = False,
       max_num_tokens: int | None = None,
+      filter_channel_content_from_kv_cache: bool = False,
   ):
     """Runs the model interactively or with a single prompt.
 
@@ -166,6 +167,8 @@ class Model:
       no_template: Interact with the model directly without applying prompt
         templates or stripping stop tokens.
       max_num_tokens: Maximum number of tokens for the KV cache.
+      filter_channel_content_from_kv_cache: Whether to filter channel content
+        from the KV cache.
     """
     if not self.exists():
       click.echo(
@@ -214,6 +217,7 @@ class Model:
               messages=messages,
               tool_event_handler=handler,
               extra_context=extra_context,
+              filter_channel_content_from_kv_cache=filter_channel_content_from_kv_cache,
           )
 
         with runner_cm as runner:

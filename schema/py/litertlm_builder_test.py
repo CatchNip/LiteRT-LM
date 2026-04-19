@@ -103,6 +103,45 @@ class LitertlmBuilderTest(parameterized.TestCase):
     self.assertIn("Key: sys_test_k, Value (String): sys_test_v", ss)
     self.assertIn("Sections (0)", ss)
 
+  def test_auto_generated_metadata(self):
+    """Tests that uuid and creation_timestamp are automatically added."""
+    builder = litertlm_builder.LitertLmFileBuilder()
+    self._add_system_metadata(builder)
+    ss = self._build_and_read_litertlm(builder)
+    self.assertIn("Key: uuid, Value (String):", ss)
+    self.assertIn("Key: creation_timestamp, Value (String):", ss)
+
+  def test_override_existing_timestamp(self):
+    """Tests that existing creation_timestamp is overridden."""
+    builder = litertlm_builder.LitertLmFileBuilder()
+    custom_time = "2020-01-01T00:00:00Z"
+    builder.add_system_metadata(
+        litertlm_builder.Metadata(
+            key="creation_timestamp",
+            value=custom_time,
+            dtype=litertlm_builder.DType.STRING,
+        )
+    )
+    ss = self._build_and_read_litertlm(builder)
+    self.assertNotIn(
+        f"Key: creation_timestamp, Value (String): {custom_time}", ss
+    )
+    self.assertIn("Key: creation_timestamp, Value (String):", ss)
+
+  def test_preserve_existing_uuid(self):
+    """Tests that existing uuid is not overridden."""
+    builder = litertlm_builder.LitertLmFileBuilder()
+    custom_uuid = "my-custom-uuid-123"
+    builder.add_system_metadata(
+        litertlm_builder.Metadata(
+            key="uuid",
+            value=custom_uuid,
+            dtype=litertlm_builder.DType.STRING,
+        )
+    )
+    ss = self._build_and_read_litertlm(builder)
+    self.assertIn(f"Key: uuid, Value (String): {custom_uuid}", ss)
+
   def test_add_system_metadata_duplicate_key(self):
     """Tests that adding system metadata with a duplicate key raises a ValueError."""
     builder = litertlm_builder.LitertLmFileBuilder()

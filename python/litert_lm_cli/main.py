@@ -453,6 +453,12 @@ def benchmark(
     default=None,
     help="Maximum number of tokens for the KV cache.",
 )
+@click.option(
+    "--filter-channel-content-from-kv-cache",
+    is_flag=True,
+    default=False,
+    help="Whether to filter channel content from the KV cache.",
+)
 @common_inference_options
 def run(
     model_reference,
@@ -466,6 +472,7 @@ def run(
     from_huggingface_repo=None,
     huggingface_token=None,
     max_num_tokens=None,
+    filter_channel_content_from_kv_cache=False,
 ):
   r"""Runs a LiteRT-LM model interactively or with a single prompt.
 
@@ -486,6 +493,8 @@ def run(
     from_huggingface_repo: The HuggingFace repository ID.
     huggingface_token: The HuggingFace API token.
     max_num_tokens: Maximum number of tokens for the KV cache.
+    filter_channel_content_from_kv_cache: Whether to filter channel content from
+      the KV cache.
   """
   # If the stdin is not connected to the terminal, e.g., piped or redirected
   # input, then handle the input as the one-shot prompt.
@@ -548,6 +557,7 @@ def run(
       enable_speculative_decoding=enable_speculative_decoding,
       no_template=no_template,
       max_num_tokens=max_num_tokens,
+      filter_channel_content_from_kv_cache=filter_channel_content_from_kv_cache,
   )
 
 
