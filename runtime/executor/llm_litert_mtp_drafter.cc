@@ -298,7 +298,7 @@ absl::Status LlmLiteRtMtpDrafter::PrepareDrafterInputBuffers(
   if (active_drafter_input_buffers_.contains("param_tensor")) {
     RETURN_IF_ERROR(FillSingleBufferCacheParamTensor(
         active_drafter_input_buffers_["param_tensor"], position,
-        /*update_length=*/0));
+        /*update_length=*/1));
   }
   return absl::OkStatus();
 }
@@ -440,7 +440,7 @@ absl::StatusOr<std::vector<std::vector<int>>> LlmLiteRtMtpDrafter::Draft(
     absl::flat_hash_map<absl::string_view, TensorBuffer>&
         output_kv_cache_buffers) {
   RETURN_IF_ERROR(
-      PrepareDrafterInputBuffers(position, output_kv_cache_buffers));
+      PrepareDrafterInputBuffers(position - 1, output_kv_cache_buffers));
 
   ASSIGN_OR_RETURN(std::vector<int> drafted_tokens,
                    RunDraftingLoop(token_id, activations));
