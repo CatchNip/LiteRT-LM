@@ -249,6 +249,30 @@ TEST(ConversationConfigTest, CreateDefault) {
   EXPECT_OK(Conversation::Create(*engine, config));
 }
 
+TEST(ConversationConfigTest, StressCreateDelete) {
+  ASSERT_OK_AND_ASSIGN(auto model_assets,
+                       ModelAssets::Create(GetTestdataPath(kTestLlmPath)));
+  ASSERT_OK_AND_ASSIGN(auto engine_settings, EngineSettings::CreateDefault(
+                                                 model_assets, Backend::CPU));
+  engine_settings.GetMutableMainExecutorSettings().SetCacheDir(":nocache");
+  engine_settings.GetMutableMainExecutorSettings().SetMaxNumTokens(10);
+  ASSERT_OK_AND_ASSIGN(auto engine, EngineFactory::CreateAny(engine_settings));
+  ASSERT_OK_AND_ASSIGN(auto config, ConversationConfig::CreateDefault(*engine));
+
+  for (int i = 0; i < 50; ++i) {
+    ASSERT_OK_AND_ASSIGN(auto conversation,
+                         Conversation::Create(*engine, config));
+    Message user_message = {{"role", "user"}, {"content", "Hello world!"}};
+    ASSERT_OK_AND_ASSIGN(const Message message,
+                         conversation->SendMessage(user_message));
+    EXPECT_EQ(message["role"], "assistant");
+    ASSERT_TRUE(message["content"].is_array());
+    ASSERT_FALSE(message["content"].empty());
+    EXPECT_EQ(message["content"][0]["type"], "text");
+    EXPECT_FALSE(message["content"][0]["text"].get<std::string>().empty());
+  }
+}
+
 TEST(ConversationConfigTest, CreateDefaultWithOverwritePromptTemplate) {
   ASSERT_OK_AND_ASSIGN(auto model_assets,
                        ModelAssets::Create(GetTestdataPath(kTestLlmPath)));
