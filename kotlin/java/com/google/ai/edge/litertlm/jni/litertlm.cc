@@ -603,6 +603,13 @@ JNI_METHOD(nativeCreateSession)(JNIEnv* env, jclass thiz, jlong engine_pointer,
   }
 
   Engine* engine = reinterpret_cast<Engine*>(engine_pointer);
+  if (engine->GetEngineSettings().GetAudioExecutorSettings().has_value()) {
+    session_config.SetAudioModalityEnabled(true);
+  }
+  if (engine->GetEngineSettings().GetVisionExecutorSettings().has_value()) {
+    session_config.SetVisionModalityEnabled(true);
+  }
+
   auto session = engine->CreateSession(session_config);
   if (!session.ok()) {
     ThrowLiteRtLmJniException(
@@ -810,6 +817,12 @@ LITERTLM_JNIEXPORT jlong JNICALL JNI_METHOD(nativeCreateConversation)(
   if (sampler_config_obj != nullptr) {
     session_config.GetMutableSamplerParams() =
         CreateSamplerParamsFromJni(env, sampler_config_obj);
+  }
+  if (engine->GetEngineSettings().GetAudioExecutorSettings().has_value()) {
+    session_config.SetAudioModalityEnabled(true);
+  }
+  if (engine->GetEngineSettings().GetVisionExecutorSettings().has_value()) {
+    session_config.SetVisionModalityEnabled(true);
   }
 
   // Create the Preface from the system instruction and tools.
