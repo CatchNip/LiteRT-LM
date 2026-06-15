@@ -152,3 +152,45 @@ cc_binary(
         "//conditions:default": [],
     }),
 )
+
+# ---------------------------------------------------------------------------
+# Shared-library targets for the C API.
+#
+# Upstream ships the C API only as the `:engine` cc_library with no packaged
+# shared library. These `cc_binary(linkshared = True)` targets produce the
+# canonical `lib<NAME>.{so,dylib}` so `-lCLiteRTLM` resolves directly — the
+# Android artifact has no upstream prebuilt, and a uniform loose library on
+# every platform keeps the consuming build script simple.
+#   Linux / Android → libCLiteRTLM.so    (ELF, --export-dynamic)
+#   macOS / iOS     → libCLiteRTLM.dylib (Mach-O, @rpath install_name)
+# ---------------------------------------------------------------------------
+
+cc_binary(
+    name = "libCLiteRTLM.so",
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # Keep every `litert_lm_*` symbol visible to dlopen/dlsym consumers; the
+    # ELF default would export only directly-referenced symbols.
+    linkopts = ["-Wl,--export-dynamic"],
+    deps = [":engine"],
+)
+
+cc_binary(
+    name = "libCLiteRTLM.dylib",
+    linkshared = True,
+    linkstatic = True,
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:osx": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # @rpath install name lets consumers position the library anywhere and
+    # resolve via per-binary rpath entries. Mach-O exports by default.
+    linkopts = ["-Wl,-install_name,@rpath/libCLiteRTLM.dylib"],
+    deps = [":engine"],
+)
